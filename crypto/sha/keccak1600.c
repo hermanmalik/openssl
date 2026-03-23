@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -15,7 +15,10 @@
 
 size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
     size_t r);
+size_t SHA3_absorb_12(uint64_t A[5][5], const unsigned char *inp, size_t len,
+    size_t r);
 void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r, int next);
+void SHA3_squeeze_12(uint64_t A[5][5], unsigned char *out, size_t len, size_t r, int next);
 
 #if !defined(KECCAK1600_ASM) || !defined(SELFTEST)
 
@@ -231,11 +234,11 @@ static void Iota(uint64_t A[5][5], size_t i)
     A[0][0] ^= iotas[i];
 }
 
-static void KeccakF1600(uint64_t A[5][5])
+static void KeccakF1600_rounds(uint64_t A[5][5], size_t start)
 {
     size_t i;
 
-    for (i = 0; i < 24; i++) {
+    for (i = start; i < 24; i++) {
         Theta(A);
         Rho(A);
         Pi(A);
@@ -366,11 +369,11 @@ static void Round(uint64_t A[5][5], size_t i)
     A[4][4] = C[4] ^ (~C[0] & C[1]);
 }
 
-static void KeccakF1600(uint64_t A[5][5])
+static void KeccakF1600_rounds(uint64_t A[5][5], size_t start)
 {
     size_t i;
 
-    for (i = 0; i < 24; i++) {
+    for (i = start; i < 24; i++) {
         Round(A, i);
     }
 }
@@ -509,11 +512,11 @@ static void Round(uint64_t A[5][5], size_t i)
     A[0][0] ^= iotas[i];
 }
 
-static void KeccakF1600(uint64_t A[5][5])
+static void KeccakF1600_rounds(uint64_t A[5][5], size_t start)
 {
     size_t i;
 
-    for (i = 0; i < 24; i++) {
+    for (i = start; i < 24; i++) {
         Round(A, i);
     }
 }
@@ -647,10 +650,15 @@ static void Round(uint64_t R[5][5], uint64_t A[5][5], size_t i)
 #endif
 }
 
-static void KeccakF1600(uint64_t A[5][5])
+/* The mask is round-invariant as per section 2.2 of "Keccak
+ * implementation overview", so the transform is the same 
+ * regardless of how many rounds are used.
+ */
+static void KeccakF1600_rounds(uint64_t A[5][5], size_t start)
 {
     uint64_t T[5][5];
     size_t i;
+    assert(start % 2 == 0);
 
 #ifdef KECCAK_COMPLEMENTING_TRANSFORM
     A[0][1] = ~A[0][1];
@@ -661,7 +669,7 @@ static void KeccakF1600(uint64_t A[5][5])
     A[4][0] = ~A[4][0];
 #endif
 
-    for (i = 0; i < 24; i += 2) {
+    for (i = start; i < 24; i += 2) {
         Round(T, A, i);
         Round(A, T, i + 1);
     }
@@ -967,11 +975,12 @@ static void FourRounds(uint64_t A[5][5], size_t i)
     /* C[4] ^= */ A[4][4] = B[4] ^ (~B[0] & B[1]);
 }
 
-static void KeccakF1600(uint64_t A[5][5])
+static void KeccakF1600_rounds(uint64_t A[5][5], size_t start)
 {
     size_t i;
+    assert(start % 4 == 0);
 
-    for (i = 0; i < 24; i += 4) {
+    for (i = start; i < 24; i += 4) {
         FourRounds(A, i);
     }
 }
@@ -1092,8 +1101,8 @@ static uint64_t BitDeinterleave(uint64_t Ai)
  * padding and intermediate sub-block buffering, byte- or bitwise, is
  * caller's responsibility.
  */
-size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
-    size_t r)
+static inline size_t SHA3_absorb_rounds(uint64_t A[5][5], const unsigned char *inp, size_t len,
+    size_t r, size_t start)
 {
     uint64_t *A_flat = (uint64_t *)A;
     size_t i, w = r / 8;
@@ -1107,11 +1116,23 @@ size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
 
             A_flat[i] ^= BitInterleave(Ai);
         }
-        KeccakF1600(A);
+        KeccakF1600_rounds(A, start);
         len -= r;
     }
 
     return len;
+}
+
+size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
+    size_t r)
+{
+    return SHA3_absorb_rounds(A, inp, len, r, 0);
+}
+
+size_t SHA3_absorb_12(uint64_t A[5][5], const unsigned char *inp, size_t len,
+    size_t r)
+{
+    return SHA3_absorb_rounds(A, inp, len, r, 12);
 }
 
 /*
@@ -1123,8 +1144,8 @@ size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
  * When only a single call to SHA3_squeeze is required, |len| can be any size
  * and |next| must be 0.
  */
-void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
-    int next)
+static inline void SHA3_squeeze_rounds(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
+    int next, size_t start)
 {
     uint64_t *A_flat = (uint64_t *)A;
     size_t i, w = r / 8;
@@ -1133,7 +1154,7 @@ void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
 
     while (len != 0) {
         if (next)
-            KeccakF1600(A);
+            KeccakF1600_rounds(A, start);
         next = 1;
         for (i = 0; i < w && len != 0; i++) {
             uint64_t Ai = BitDeinterleave(A_flat[i]);
@@ -1159,7 +1180,20 @@ void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
         }
     }
 }
-#endif
+
+void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
+    int next)
+{
+    SHA3_squeeze_rounds(A, out, len, r, next, 0);
+}
+
+void SHA3_squeeze_12(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
+    int next)
+{
+    SHA3_squeeze_rounds(A, out, len, r, next, 12);
+}
+
+#endif /* !defined(KECCAK1600_ASM) || !defined(SELFTEST) */
 
 #ifdef SELFTEST
 /*
