@@ -62,7 +62,13 @@ size_t ossl_sha3_absorb_default(KECCAK1600_CTX *ctx, const unsigned char *inp, s
 int ossl_sha3_final_default(KECCAK1600_CTX *ctx, unsigned char *out, size_t outlen);
 int ossl_shake_squeeze_default(KECCAK1600_CTX *ctx, unsigned char *out, size_t outlen);
 
+size_t ossl_turboshake_absorb_default(KECCAK1600_CTX *ctx, const unsigned char *inp, size_t len);
+int ossl_turboshake_final_default(KECCAK1600_CTX *ctx, unsigned char *out, size_t outlen);
+int ossl_turboshake_squeeze_default(KECCAK1600_CTX *ctx, unsigned char *out, size_t outlen);
+
 size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
+    size_t r);
+size_t SHA3_absorb_12(uint64_t A[5][5], const unsigned char *inp, size_t len,
     size_t r);
 
 #endif /* OSSL_INTERNAL_SHA3_H */

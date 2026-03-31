@@ -25,6 +25,7 @@
 
 #define SHA3_FLAGS PROV_DIGEST_FLAG_ALGID_ABSENT
 #define SHAKE_FLAGS (PROV_DIGEST_FLAG_XOF | PROV_DIGEST_FLAG_ALGID_ABSENT)
+#define TURBOSHAKE_FLAGS (PROV_DIGEST_FLAG_XOF | PROV_DIGEST_FLAG_ALGID_ABSENT)
 #define CSHAKE_KECCAK_FLAGS PROV_DIGEST_FLAG_XOF
 
 /*
@@ -53,6 +54,7 @@
 #define KECCAK_PADDING 0x01
 #define SHA3_PADDING 0x06
 #define SHAKE_PADDING 0x1f
+#define TURBOSHAKE_PADDING 0x1f
 #define CSHAKE_KECCAK_PADDING 0x04
 
 #if defined(OPENSSL_CPUID_OBJ) && defined(__s390__) && defined(KECCAK1600_ASM)
@@ -95,6 +97,13 @@ static PROV_SHA3_METHOD shake_generic_md = {
     ossl_sha3_final_default,
     ossl_shake_squeeze_default
 };
+
+static PROV_SHA3_METHOD turboshake_generic_md = {
+    ossl_turboshake_absorb_default,
+    ossl_turboshake_final_default,
+    ossl_turboshake_squeeze_default
+};
+
 
 static int keccak_init(void *vctx, ossl_unused const OSSL_PARAM params[])
 {
@@ -409,6 +418,7 @@ static PROV_SHA3_METHOD shake_ARMSHA3_md = {
 #define SHA3_SET_MD(uname, typ) ctx->meth = sha3_generic_md;
 #define CSHAKE_KECCAK_SET_MD(bitlen) ctx->meth = shake_generic_md;
 #define SHAKE_SET_MD(uname, typ) ctx->meth = shake_generic_md;
+#define TURBOSHAKE_SET_MD(uname, typ) ctx->meth = turboshake_generic_md;
 #endif /* S390_SHA3 */
 
 #define SHA3_newctx(typ, uname, name, bitlen, pad)        \
@@ -469,6 +479,22 @@ static PROV_SHA3_METHOD shake_ARMSHA3_md = {
         return ctx;                                       \
     }
 
+#define TURBOSHAKE_newctx(typ, uname, name, bitlen, mdlen, pad) \
+    static OSSL_FUNC_digest_newctx_fn name##_newctx;       \
+    static void *name##_newctx(void *provctx)              \
+    {                                                      \
+        KECCAK1600_CTX *ctx;                               \
+                                                           \
+        DIGEST_PROV_CHECK(provctx, SHA3_256);              \
+        if ((ctx = OPENSSL_zalloc(sizeof(*ctx))) == NULL)  \
+            return NULL;                                   \
+        ossl_keccak_init(ctx, pad, bitlen, mdlen);         \
+        if (mdlen == 0)                                    \
+            ctx->md_size = SIZE_MAX;                       \
+        TURBOSHAKE_SET_MD(uname, typ)                      \
+        return ctx;                                        \
+    }
+
 #define PROV_FUNC_SHA3_DIGEST_COMMON(name, bitlen, blksize, dgstsize, flags)  \
     PROV_FUNC_DIGEST_GET_PARAM(name, blksize, dgstsize, flags)                \
     const OSSL_DISPATCH ossl_##name##_functions[] = {                         \
@@ -497,6 +523,18 @@ static PROV_SHA3_METHOD shake_ARMSHA3_md = {
         { OSSL_FUNC_DIGEST_GET_CTX_PARAMS, (void (*)(void))shake_get_ctx_params }, \
         { OSSL_FUNC_DIGEST_GETTABLE_CTX_PARAMS,                                    \
             (void (*)(void))shake_gettable_ctx_params },                           \
+        PROV_DISPATCH_FUNC_DIGEST_CONSTRUCT_END
+
+#define PROV_FUNC_TURBOSHAKE_DIGEST(name, bitlen, blksize, dgstsize, flags)             \
+    PROV_FUNC_SHA3_DIGEST_COMMON(name, bitlen, blksize, dgstsize, flags),               \
+        { OSSL_FUNC_DIGEST_SQUEEZE, (void (*)(void))shake_squeeze },                    \
+        { OSSL_FUNC_DIGEST_INIT, (void (*)(void))keccak_init_params },                  \
+        { OSSL_FUNC_DIGEST_SET_CTX_PARAMS, (void (*)(void))shake_set_ctx_params },      \
+        { OSSL_FUNC_DIGEST_SETTABLE_CTX_PARAMS,                                         \
+            (void (*)(void))shake_settable_ctx_params },                                \
+        { OSSL_FUNC_DIGEST_GET_CTX_PARAMS, (void (*)(void))shake_get_ctx_params },      \
+        { OSSL_FUNC_DIGEST_GETTABLE_CTX_PARAMS,                                         \
+            (void (*)(void))shake_gettable_ctx_params },                                \
         PROV_DISPATCH_FUNC_DIGEST_CONSTRUCT_END
 
 static void keccak_freectx(void *vctx)
@@ -708,6 +746,7 @@ static int shake_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 #define SHAKE_SER_ID 0x020000
 #define SHA3_SER_ID 0x040000
 #define CSHAKE_KECCAK_SER_ID 0x080000
+#define TURBOSHAKE_SER_ID 0x100000
 
 #define IMPLEMENT_SHA3_functions(bitlen)                                           \
     SHA3_newctx(sha3, SHA3_##bitlen, sha3_##bitlen, bitlen, (uint8_t)SHA3_PADDING) \
@@ -730,6 +769,14 @@ static int shake_set_ctx_params(void *vctx, const OSSL_PARAM params[])
             PROV_FUNC_SHAKE_DIGEST(shake_##bitlen, bitlen,             \
                 SHA3_BLOCKSIZE(bitlen), 0,                             \
                 SHAKE_FLAGS)
+
+#define IMPLEMENT_TURBOSHAKE_functions(bitlen)                                   \
+    TURBOSHAKE_newctx(turboshake, TURBOSHAKE_##bitlen, turboshake_##bitlen,      \
+        bitlen, 0 /* no default md length */, (uint8_t)TURBOSHAKE_PADDING)       \
+        IMPLEMENT_SERIALIZE_FNS(turboshake_##bitlen, TURBOSHAKE_SER_ID + bitlen) \
+            PROV_FUNC_TURBOSHAKE_DIGEST(turboshake_##bitlen, bitlen,             \
+                SHA3_BLOCKSIZE(bitlen), 0,                                       \
+                TURBOSHAKE_FLAGS)
 
 #define IMPLEMENT_CSHAKE_KECCAK_functions(bitlen)                                        \
     CSHAKE_KECCAK_newctx(cshake_keccak_##bitlen, bitlen, (uint8_t)CSHAKE_KECCAK_PADDING) \
@@ -759,6 +806,10 @@ IMPLEMENT_KECCAK_functions(512)
 IMPLEMENT_SHAKE_functions(128)
 /* ossl_shake_256_functions */
 IMPLEMENT_SHAKE_functions(256)
+/* ossl_turboshake_128_functions */
+IMPLEMENT_TURBOSHAKE_functions(128)
+/* ossl_turboshake_256_functions */
+IMPLEMENT_TURBOSHAKE_functions(256)
 /* ossl_cshake_keccak_128_functions */
 IMPLEMENT_CSHAKE_KECCAK_functions(128)
     /* ossl_cshake_keccak_256_functions */

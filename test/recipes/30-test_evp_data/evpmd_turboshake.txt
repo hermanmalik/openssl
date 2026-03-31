@@ -1,0 +1,6 @@
+Title = TurboSHAKE test vectors from RFC 9861
+
+# TurboSHAKE128, empty input, D=0x1F, 32-byte output
+Digest = TURBOSHAKE128
+Input = ""
+Output = 1E415F1C5983AFF2169217277D17BB538CD945A397DDEC541F1CE41AF2C1B74C
