@@ -172,6 +172,7 @@ my %params = (
     'OSSL_DIGEST_PARAM_BLOCK_SIZE' =>   "blocksize",    # size_t
     'OSSL_DIGEST_PARAM_SIZE' =>         "size",         # size_t
     'OSSL_DIGEST_PARAM_XOF' =>          "xof",          # int, 0 or 1
+    'OSSL_DIGEST_PARAM_DOMAIN_SEP' =>   "domain-sep",   # uint
     'OSSL_DIGEST_PARAM_ALGID_ABSENT' => "algid-absent", # int, 0 or 1
     'OSSL_DIGEST_PARAM_FUNCTION_NAME' =>    "function-name", # utf8 string
     'OSSL_DIGEST_PARAM_CUSTOMIZATION' =>    "customization", # utf8 string

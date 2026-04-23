@@ -73,7 +73,8 @@
  * of the functions in the dispatch table are correct.
  */
 static OSSL_FUNC_digest_init_fn keccak_init;
-static OSSL_FUNC_digest_init_fn keccak_init_params;
+static OSSL_FUNC_digest_init_fn shake_init_params;
+static OSSL_FUNC_digest_init_fn turboshake_init_params;
 static OSSL_FUNC_digest_update_fn keccak_update;
 static OSSL_FUNC_digest_final_fn keccak_final;
 static OSSL_FUNC_digest_freectx_fn keccak_freectx;
@@ -85,6 +86,11 @@ static OSSL_FUNC_digest_get_ctx_params_fn shake_get_ctx_params;
 static OSSL_FUNC_digest_gettable_ctx_params_fn shake_gettable_ctx_params;
 static OSSL_FUNC_digest_set_ctx_params_fn shake_set_ctx_params;
 static OSSL_FUNC_digest_settable_ctx_params_fn shake_settable_ctx_params;
+
+static OSSL_FUNC_digest_get_ctx_params_fn turboshake_get_ctx_params;
+static OSSL_FUNC_digest_gettable_ctx_params_fn turboshake_gettable_ctx_params;
+static OSSL_FUNC_digest_set_ctx_params_fn turboshake_set_ctx_params;
+static OSSL_FUNC_digest_settable_ctx_params_fn turboshake_settable_ctx_params;
 
 static PROV_SHA3_METHOD sha3_generic_md = {
     ossl_sha3_absorb_default,
@@ -114,10 +120,16 @@ static int keccak_init(void *vctx, ossl_unused const OSSL_PARAM params[])
     return 1;
 }
 
-static int keccak_init_params(void *vctx, const OSSL_PARAM params[])
+static int shake_init_params(void *vctx, const OSSL_PARAM params[])
 {
     return keccak_init(vctx, NULL)
         && shake_set_ctx_params(vctx, params);
+}
+
+static int turboshake_init_params(void *vctx, const OSSL_PARAM params[])
+{
+    return keccak_init(vctx, NULL)
+        && turboshake_set_ctx_params(vctx, params);
 }
 
 static int keccak_update(void *vctx, const unsigned char *inp, size_t len)
@@ -516,7 +528,7 @@ static PROV_SHA3_METHOD shake_ARMSHA3_md = {
 #define PROV_FUNC_SHAKE_DIGEST(name, bitlen, blksize, dgstsize, flags)             \
     PROV_FUNC_SHA3_DIGEST_COMMON(name, bitlen, blksize, dgstsize, flags),          \
         { OSSL_FUNC_DIGEST_SQUEEZE, (void (*)(void))shake_squeeze },               \
-        { OSSL_FUNC_DIGEST_INIT, (void (*)(void))keccak_init_params },             \
+        { OSSL_FUNC_DIGEST_INIT, (void (*)(void))shake_init_params },              \
         { OSSL_FUNC_DIGEST_SET_CTX_PARAMS, (void (*)(void))shake_set_ctx_params }, \
         { OSSL_FUNC_DIGEST_SETTABLE_CTX_PARAMS,                                    \
             (void (*)(void))shake_settable_ctx_params },                           \
@@ -528,13 +540,13 @@ static PROV_SHA3_METHOD shake_ARMSHA3_md = {
 #define PROV_FUNC_TURBOSHAKE_DIGEST(name, bitlen, blksize, dgstsize, flags)             \
     PROV_FUNC_SHA3_DIGEST_COMMON(name, bitlen, blksize, dgstsize, flags),               \
         { OSSL_FUNC_DIGEST_SQUEEZE, (void (*)(void))shake_squeeze },                    \
-        { OSSL_FUNC_DIGEST_INIT, (void (*)(void))keccak_init_params },                  \
-        { OSSL_FUNC_DIGEST_SET_CTX_PARAMS, (void (*)(void))shake_set_ctx_params },      \
+        { OSSL_FUNC_DIGEST_INIT, (void (*)(void))turboshake_init_params },              \
+        { OSSL_FUNC_DIGEST_SET_CTX_PARAMS, (void (*)(void))turboshake_set_ctx_params }, \
         { OSSL_FUNC_DIGEST_SETTABLE_CTX_PARAMS,                                         \
-            (void (*)(void))shake_settable_ctx_params },                                \
-        { OSSL_FUNC_DIGEST_GET_CTX_PARAMS, (void (*)(void))shake_get_ctx_params },      \
+            (void (*)(void))turboshake_settable_ctx_params },                           \
+        { OSSL_FUNC_DIGEST_GET_CTX_PARAMS, (void (*)(void))turboshake_get_ctx_params }, \
         { OSSL_FUNC_DIGEST_GETTABLE_CTX_PARAMS,                                         \
-            (void (*)(void))shake_gettable_ctx_params },                                \
+            (void (*)(void))turboshake_gettable_ctx_params },                           \
         PROV_DISPATCH_FUNC_DIGEST_CONSTRUCT_END
 
 static void keccak_freectx(void *vctx)
@@ -739,6 +751,75 @@ static int shake_set_ctx_params(void *vctx, const OSSL_PARAM params[])
         ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
         return 0;
     }
+    return 1;
+}
+
+
+static const OSSL_PARAM *turboshake_gettable_ctx_params(ossl_unused void *ctx,
+    ossl_unused void *provctx)
+{
+    return turboshake_get_ctx_params_list;
+}
+
+static int turboshake_get_ctx_params(void *vctx, OSSL_PARAM params[])
+{
+    struct turboshake_get_ctx_params_st p;
+    KECCAK1600_CTX *ctx = (KECCAK1600_CTX *)vctx;
+
+    if (ctx == NULL || !turboshake_get_ctx_params_decoder(params, &p))
+        return 0;
+
+    if (p.xoflen != NULL && !OSSL_PARAM_set_size_t(p.xoflen, ctx->md_size)) {
+        ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
+        return 0;
+    }
+    /* Size is an alias of xoflen but separate them for compatibility */
+    if (p.size != NULL && !OSSL_PARAM_set_size_t(p.size, ctx->md_size)) {
+        ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
+        return 0;
+    }
+
+    if (p.domain_sep != NULL && !OSSL_PARAM_set_uint(p.domain_sep, ctx->pad)) {
+        ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
+        return 0;
+    }
+
+    return 1;
+}
+
+static const OSSL_PARAM *turboshake_settable_ctx_params(ossl_unused void *ctx,
+    ossl_unused void *provctx)
+{
+    return turboshake_set_ctx_params_list;
+}
+
+static int turboshake_set_ctx_params(void *vctx, const OSSL_PARAM params[])
+{
+    struct turboshake_set_ctx_params_st p;
+    KECCAK1600_CTX *ctx = (KECCAK1600_CTX *)vctx;
+
+    if (ossl_unlikely(ctx == NULL || !turboshake_set_ctx_params_decoder(params, &p)))
+        return 0;
+
+    if (ossl_unlikely(p.xoflen != NULL
+            && !OSSL_PARAM_get_size_t(p.xoflen, &ctx->md_size))) {
+        ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
+        return 0;
+    }
+
+    if (p.domain_sep != NULL) {
+        unsigned int sep;
+        if (ossl_unlikely(!OSSL_PARAM_get_uint(p.domain_sep, &sep))) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
+            return 0;
+        }
+        if (sep < 0x01 || sep > 0x7F) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_VALUE_ERROR);
+            return 0;
+        }
+        ctx->pad = (unsigned char)sep;
+    }
+
     return 1;
 }
 
