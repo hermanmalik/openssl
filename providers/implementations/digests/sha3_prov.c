@@ -39,6 +39,8 @@
  *   SHA3   = 01
  *   SHAKE  = 1111
  *   CSHAKE_KECCAK = 00 (See NIST SP800-185 3.3 : i.e. it has 2 trailing zero bits)
+ *   TURBOSHAKE = 00011111 (By default, this can be set to any 8-bit byte by the caller)
+ *
  * Note that KMAC and TupleHash use CSHAKE_KECCAK.
  * The OpenSSL implementation only allows input messages that are in bytes,
  * so the above concatenated bits will start on a byte boundary.
@@ -48,14 +50,15 @@
  *   SHA3   = 0110
  *   SHAKE  = 11111000
  *   CSHAKE_KECCAK = 0010 (See NIST SP800-185 3.3 : i.e. KMAC uses cSHAKE with a fixed string)
+ *   TURBOSHAKE = 00011111 (By default)
  *
  *   Which gives the following padding values as bytes.
  */
 #define KECCAK_PADDING 0x01
 #define SHA3_PADDING 0x06
 #define SHAKE_PADDING 0x1f
-#define TURBOSHAKE_PADDING 0x1f
 #define CSHAKE_KECCAK_PADDING 0x04
+#define TURBOSHAKE_PADDING 0x1f
 
 #if defined(OPENSSL_CPUID_OBJ) && defined(__s390__) && defined(KECCAK1600_ASM)
 /*
@@ -430,8 +433,8 @@ static PROV_SHA3_METHOD shake_ARMSHA3_md = {
 #define SHA3_SET_MD(uname, typ) ctx->meth = sha3_generic_md;
 #define CSHAKE_KECCAK_SET_MD(bitlen) ctx->meth = shake_generic_md;
 #define SHAKE_SET_MD(uname, typ) ctx->meth = shake_generic_md;
+#endif /* S390_SHA3 and ARM */
 #define TURBOSHAKE_SET_MD(uname, typ) ctx->meth = turboshake_generic_md;
-#endif /* S390_SHA3 */
 
 #define SHA3_newctx(typ, uname, name, bitlen, pad)        \
     static OSSL_FUNC_digest_newctx_fn name##_newctx;      \

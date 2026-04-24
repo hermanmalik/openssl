@@ -434,8 +434,3 @@ int ossl_turboshake_squeeze_default(KECCAK1600_CTX *ctx, unsigned char *out, siz
     return 1;
 }
 
-PROV_SHA3_METHOD turboshake_generic_meth = {
-    ossl_turboshake_absorb_default,
-    ossl_turboshake_final_default,
-    ossl_turboshake_squeeze_default
-};

@@ -20,8 +20,6 @@ size_t SHA3_absorb_12(uint64_t A[5][5], const unsigned char *inp, size_t len,
 void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r, int next);
 void SHA3_squeeze_12(uint64_t A[5][5], unsigned char *out, size_t len, size_t r, int next);
 
-#if !defined(KECCAK1600_ASM) || !defined(SELFTEST)
-
 /*
  * Choose some sensible defaults
  */
@@ -651,7 +649,7 @@ static void Round(uint64_t R[5][5], uint64_t A[5][5], size_t i)
 }
 
 /* The mask is round-invariant as per section 2.2 of "Keccak
- * implementation overview", so the transform is the same 
+ * implementation overview", so the transform is the same
  * regardless of how many rounds are used.
  */
 static void KeccakF1600_rounds(uint64_t A[5][5], size_t start)
@@ -1123,18 +1121,6 @@ static inline size_t SHA3_absorb_rounds(uint64_t A[5][5], const unsigned char *i
     return len;
 }
 
-size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
-    size_t r)
-{
-    return SHA3_absorb_rounds(A, inp, len, r, 0);
-}
-
-size_t SHA3_absorb_12(uint64_t A[5][5], const unsigned char *inp, size_t len,
-    size_t r)
-{
-    return SHA3_absorb_rounds(A, inp, len, r, 12);
-}
-
 /*
  * SHA3_squeeze may be called after SHA3_absorb to generate |out| hash value of
  * |len| bytes.
@@ -1181,10 +1167,27 @@ static inline void SHA3_squeeze_rounds(uint64_t A[5][5], unsigned char *out, siz
     }
 }
 
+#if !defined(KECCAK1600_ASM)
+
+size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
+    size_t r)
+{
+    return SHA3_absorb_rounds(A, inp, len, r, 0);
+}
+
 void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
     int next)
 {
     SHA3_squeeze_rounds(A, out, len, r, next, 0);
+}
+
+#endif
+
+
+size_t SHA3_absorb_12(uint64_t A[5][5], const unsigned char *inp, size_t len,
+    size_t r)
+{
+    return SHA3_absorb_rounds(A, inp, len, r, 12);
 }
 
 void SHA3_squeeze_12(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
@@ -1192,8 +1195,6 @@ void SHA3_squeeze_12(uint64_t A[5][5], unsigned char *out, size_t len, size_t r,
 {
     SHA3_squeeze_rounds(A, out, len, r, next, 12);
 }
-
-#endif /* !defined(KECCAK1600_ASM) || !defined(SELFTEST) */
 
 #ifdef SELFTEST
 /*
